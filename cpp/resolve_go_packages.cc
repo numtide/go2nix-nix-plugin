@@ -78,7 +78,7 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
   });
   env["GOPROXY"] = goProxy;
   env["GONOSUMCHECK"] = "*";
-  env["GOFLAGS"] = "-mod=mod";
+  env["GOFLAGS"] = "-mod=readonly";
   env["GOENV"] = "off";  // ignore user's ~/.config/go/env
   env["GOWORK"] = "off"; // ignore go.work files
 
@@ -134,6 +134,7 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
     bool isStdlib = false;
     bool isMainModule = false;
     bool hasModule = false;
+    bool isLocal = false; // main module or local replace (Replace.Version=="")
     std::string replacePath; // Module.Replace.Path (empty if not replaced)
     std::string
         replaceVersion; // Module.Replace.Version (empty if not replaced)
@@ -188,6 +189,11 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
         p.replacePath = repl.value("Path", "");
         p.replaceVersion = repl.value("Version", "");
       }
+
+      // A module is local if it's the main module or a local replace
+      // (Replace exists with empty version). Matches go2nix's IsLocal().
+      p.isLocal = p.isMainModule ||
+                  (!p.replacePath.empty() && p.replaceVersion.empty());
     }
 
     if (jpkg.contains("Imports") && jpkg["Imports"].is_array()) {
@@ -217,22 +223,23 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
     std::string errMsg = "resolveGoPackages: package errors:\n";
     for (auto &e : pkgErrors)
       errMsg += "  - " + e + "\n";
+    errMsg += "Hint: your GOMODCACHE may be stale. "
+              "Run 'go mod download' to populate it.\n";
     state.error<EvalError>("%s", errMsg).atPos(pos).debugThrow();
   }
 
-  // Build set of third-party import paths (not stdlib, not main module, has
-  // module)
+  // Build set of third-party import paths (not stdlib, not local, has module)
   std::set<std::string> thirdPartyPaths;
   for (auto &p : allPkgs) {
-    if (!p.isStdlib && p.hasModule && !p.isMainModule)
+    if (!p.isStdlib && p.hasModule && !p.isLocal)
       thirdPartyPaths.insert(p.importPath);
   }
 
   // Collect module replacements: modKey -> { path, version }
-  // (deduplicated since many packages share the same module)
+  // Only remote replacements (version != ""); local replaces are filtered out.
   std::map<std::string, std::pair<std::string, std::string>> replMap;
   for (auto &p : allPkgs) {
-    if (!p.hasModule || p.isMainModule || p.replacePath.empty())
+    if (!p.hasModule || p.isLocal || p.replacePath.empty())
       continue;
     std::string modKey = p.modPath + "@" + p.modVersion;
     replMap[modKey] = {p.replacePath, p.replaceVersion};
