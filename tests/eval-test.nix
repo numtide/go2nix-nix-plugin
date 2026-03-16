@@ -31,7 +31,7 @@ pkgs.runCommand "go2nix-nix-plugin-eval-test"
         modules = builtins.mapAttrs parseModEntry modTable;
         moduleCount = builtins.length (builtins.attrNames modules);
         # Pick one module and verify it has all expected fields
-        net = modules."golang.org/x/net@v0.25.0";
+        net = modules."golang.org/x/net@v0.50.0";
         hasFields = builtins.all (f: builtins.hasAttr f net)
           [ "hash" "path" "version" "fetchPath" "dirSuffix" ];
       in
@@ -46,8 +46,8 @@ pkgs.runCommand "go2nix-nix-plugin-eval-test"
     modules=$(echo "$result" | sed 's/modules=\([0-9]*\).*/\1/')
     hasFields=$(echo "$result" | sed 's/.*hasFields=\([a-z]*\).*/\1/')
 
-    if [ "$modules" -ne 4 ]; then
-      echo "FAIL: Expected 4 modules, got $modules"
+    if [ "$modules" -ne 37 ]; then
+      echo "FAIL: Expected 37 modules, got $modules"
       exit 1
     fi
 
