@@ -44,6 +44,7 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
   goArgs.push_back("list");
   goArgs.push_back("-json");
   goArgs.push_back("-deps");
+  goArgs.push_back("-e");
 
   if (!tags.empty()) {
     std::string tagStr;
@@ -89,16 +90,18 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
 
   if (status != 0) {
     state
-        .error<EvalError>("resolveGoPackages: 'go list' failed (exit %d).\n"
-                          "Output:\n%s\n\n"
-                          "Hint: ensure all modules are in your local cache by "
-                          "running 'go mod download'.",
-                          status, output)
+        .error<EvalError>(
+            "resolveGoPackages: 'go list' failed (exit %d).\n"
+            "Hint: check the error output above, and ensure all modules "
+            "are in your local cache by running 'go mod download'.",
+            status)
         .atPos(pos)
         .debugThrow();
   }
 
-  // 7. Parse concatenated JSON objects from go list output
+  // 7. Parse concatenated JSON objects from go list output.
+  //    With -e, package errors appear in the JSON Error field instead of stderr.
+  //    Stdout is clean JSON; stderr (if any) goes to the terminal.
   struct PkgData {
     std::string importPath;
     std::string modPath;
@@ -116,10 +119,19 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
   };
 
   std::vector<PkgData> allPkgs;
+  std::vector<std::string> pkgErrors;
   std::istringstream stream(output);
   nlohmann::json jpkg;
 
   while (stream >> jpkg) {
+    // Check for per-package errors (reported via -e flag)
+    if (jpkg.contains("Error") && jpkg["Error"].is_object()) {
+      auto importPath = jpkg.value("ImportPath", "<unknown>");
+      auto errStr = jpkg["Error"].value("Err", "unknown error");
+      pkgErrors.push_back(importPath + ": " + errStr);
+      continue;
+    }
+
     PkgData p;
     p.importPath = jpkg.value("ImportPath", "");
     p.isStdlib = jpkg.value("Standard", false);
@@ -160,6 +172,13 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
         p.cgoLdflags.push_back(x.get<std::string>());
 
     allPkgs.push_back(std::move(p));
+  }
+
+  if (!pkgErrors.empty()) {
+    std::string errMsg = "resolveGoPackages: package errors:\n";
+    for (auto &e : pkgErrors)
+      errMsg += "  - " + e + "\n";
+    state.error<EvalError>("%s", errMsg).atPos(pos).debugThrow();
   }
 
   // Build set of third-party import paths (not stdlib, not main module, has
