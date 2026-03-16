@@ -1,8 +1,8 @@
 #include "helpers.h"
 
-#include <nix/expr/json-to-value.hh>
 #include <nix/expr/primops.hh>
 #include <nix/util/processes.hh>
+#include <map>
 #include <sstream>
 
 static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
@@ -191,19 +191,30 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
 
   // Collect module replacements: modKey -> { path, version }
   // (deduplicated since many packages share the same module)
-  nlohmann::json replacements = nlohmann::json::object();
+  std::map<std::string, std::pair<std::string, std::string>> replMap;
   for (auto &p : allPkgs) {
     if (!p.hasModule || p.isMainModule || p.replacePath.empty())
       continue;
     std::string modKey = p.modPath + "@" + p.modVersion;
-    replacements[modKey] = {
-        {"path", p.replacePath},
-        {"version", p.replaceVersion},
-    };
+    replMap[modKey] = {p.replacePath, p.replaceVersion};
   }
 
-  // Build packages
-  nlohmann::json packages = nlohmann::json::object();
+  auto replacements = state.buildBindings(replMap.size());
+  for (auto &[modKey, repl] : replMap) {
+    auto replAttrs = state.buildBindings(2);
+    replAttrs.alloc("path").mkString(repl.first, state.mem);
+    replAttrs.alloc("version").mkString(repl.second, state.mem);
+    replacements.alloc(modKey).mkAttrs(replAttrs.finish());
+  }
+
+  // Count third-party packages for attrset capacity
+  size_t pkgCount = 0;
+  for (auto &p : allPkgs)
+    if (thirdPartyPaths.count(p.importPath))
+      ++pkgCount;
+
+  // Build packages attrset
+  auto packages = state.buildBindings(pkgCount);
 
   for (auto &p : allPkgs) {
     if (!thirdPartyPaths.count(p.importPath))
@@ -226,30 +237,62 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
 
     std::string drvName = "gopkg-" + sanitize_name(p.importPath);
 
-    nlohmann::json pkgJson = {
-        {"modKey", modKey},
-        {"subdir", subdir},
-        {"imports", filteredImports},
-        {"drvName", drvName},
-    };
+    // Count optional fields
+    size_t attrCount = 4; // modKey, subdir, imports, drvName
+    if (p.isCgo)
+      ++attrCount;
+    if (!p.cgoPkgConfig.empty())
+      ++attrCount;
+    if (!p.cgoCflags.empty())
+      ++attrCount;
+    if (!p.cgoLdflags.empty())
+      ++attrCount;
+
+    auto pkgAttrs = state.buildBindings(attrCount);
+    pkgAttrs.alloc("drvName").mkString(drvName, state.mem);
+
+    auto importsList = state.buildList(filteredImports.size());
+    for (size_t i = 0; i < filteredImports.size(); ++i)
+      (importsList[i] = state.allocValue())
+          ->mkString(filteredImports[i], state.mem);
+    pkgAttrs.alloc("imports").mkList(importsList);
+
+    pkgAttrs.alloc("modKey").mkString(modKey, state.mem);
+    pkgAttrs.alloc("subdir").mkString(subdir, state.mem);
 
     if (p.isCgo)
-      pkgJson["isCgo"] = true;
-    if (!p.cgoPkgConfig.empty())
-      pkgJson["cgoPkgConfig"] = p.cgoPkgConfig;
-    if (!p.cgoCflags.empty())
-      pkgJson["cgoCflags"] = p.cgoCflags;
-    if (!p.cgoLdflags.empty())
-      pkgJson["cgoLdflags"] = p.cgoLdflags;
+      pkgAttrs.alloc("isCgo").mkBool(true);
 
-    packages[p.importPath] = pkgJson;
+    if (!p.cgoPkgConfig.empty()) {
+      auto list = state.buildList(p.cgoPkgConfig.size());
+      for (size_t i = 0; i < p.cgoPkgConfig.size(); ++i)
+        (list[i] = state.allocValue())
+            ->mkString(p.cgoPkgConfig[i], state.mem);
+      pkgAttrs.alloc("cgoPkgConfig").mkList(list);
+    }
+    if (!p.cgoCflags.empty()) {
+      auto list = state.buildList(p.cgoCflags.size());
+      for (size_t i = 0; i < p.cgoCflags.size(); ++i)
+        (list[i] = state.allocValue())
+            ->mkString(p.cgoCflags[i], state.mem);
+      pkgAttrs.alloc("cgoCflags").mkList(list);
+    }
+    if (!p.cgoLdflags.empty()) {
+      auto list = state.buildList(p.cgoLdflags.size());
+      for (size_t i = 0; i < p.cgoLdflags.size(); ++i)
+        (list[i] = state.allocValue())
+            ->mkString(p.cgoLdflags[i], state.mem);
+      pkgAttrs.alloc("cgoLdflags").mkList(list);
+    }
+
+    packages.alloc(p.importPath).mkAttrs(pkgAttrs);
   }
 
-  nlohmann::json result = {
-      {"packages", packages},
-      {"replacements", replacements},
-  };
-  parseJSON(state, result.dump(), v);
+  // Build result: { packages = { ... }; replacements = { ... }; }
+  auto result = state.buildBindings(2);
+  result.alloc("packages").mkAttrs(packages);
+  result.alloc("replacements").mkAttrs(replacements);
+  v.mkAttrs(result.finish());
 }
 
 static RegisterPrimOp rp2({

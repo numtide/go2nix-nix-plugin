@@ -1,6 +1,5 @@
 #include "helpers.h"
 
-#include <nix/expr/json-to-value.hh>
 #include <nix/expr/primops.hh>
 #include <toml++/toml.hpp>
 
@@ -25,8 +24,9 @@ static void prim_resolveGoModules(EvalState &state, const PosIdx pos,
   }
 
   auto *modTbl = tbl["mod"].as_table();
+  size_t modCount = modTbl ? modTbl->size() : 0;
 
-  nlohmann::json modules = nlohmann::json::object();
+  auto modules = state.buildBindings(modCount);
 
   if (modTbl) {
     for (auto &&[key, val] : *modTbl) {
@@ -51,19 +51,21 @@ static void prim_resolveGoModules(EvalState &state, const PosIdx pos,
       }
       std::string path = modKey.substr(0, atIdx);
       std::string version = modKey.substr(atIdx + 1);
+      std::string dirSuffix = escape_mod_path(path) + "@" + version;
 
-      modules[modKey] = {
-          {"hash", hash},
-          {"path", path},
-          {"version", version},
-          {"fetchPath", path},
-          {"dirSuffix", escape_mod_path(path) + "@" + version},
-      };
+      auto modAttrs = state.buildBindings(5);
+      modAttrs.alloc("dirSuffix").mkString(dirSuffix, state.mem);
+      modAttrs.alloc("fetchPath").mkString(path, state.mem);
+      modAttrs.alloc("hash").mkString(hash, state.mem);
+      modAttrs.alloc("path").mkString(path, state.mem);
+      modAttrs.alloc("version").mkString(version, state.mem);
+      modules.alloc(modKey).mkAttrs(modAttrs.finish());
     }
   }
 
-  nlohmann::json result = {{"modules", modules}};
-  parseJSON(state, result.dump(), v);
+  auto result = state.buildBindings(1);
+  result.alloc("modules").mkAttrs(modules);
+  v.mkAttrs(result);
 }
 
 static RegisterPrimOp rp({
