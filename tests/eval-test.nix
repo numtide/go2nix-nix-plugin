@@ -20,9 +20,15 @@ pkgs.runCommand "go2nix-nix-plugin-eval-test"
       --option plugin-files "${plugin}/lib/nix/plugins/libgo2nix_nix_plugin.so" \
       --expr '
       let
-        lock = builtins.readFile "${testFixtures}/go2nix.toml";
-        result = builtins.resolveGoModules { inherit lock; };
-        modules = result.modules;
+        lockfile = builtins.fromTOML (builtins.readFile "${testFixtures}/go2nix.toml");
+        modTable = lockfile.mod or {};
+        parseModEntry = modKey: hash:
+          let
+            parsed = builtins.match "(.+)@(.+)" modKey;
+            path = builtins.elemAt parsed 0;
+            version = builtins.elemAt parsed 1;
+          in { inherit hash path version; fetchPath = path; dirSuffix = path + "@" + version; };
+        modules = builtins.mapAttrs parseModEntry modTable;
         moduleCount = builtins.length (builtins.attrNames modules);
         # Pick one module and verify it has all expected fields
         net = modules."golang.org/x/net@v0.25.0";

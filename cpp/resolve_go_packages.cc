@@ -1,8 +1,8 @@
 #include "helpers.h"
 
+#include <map>
 #include <nix/expr/primops.hh>
 #include <nix/util/processes.hh>
-#include <map>
 #include <sstream>
 
 static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
@@ -100,8 +100,8 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
   }
 
   // 7. Parse concatenated JSON objects from go list output.
-  //    With -e, package errors appear in the JSON Error field instead of stderr.
-  //    Stdout is clean JSON; stderr (if any) goes to the terminal.
+  //    With -e, package errors appear in the JSON Error field instead of
+  //    stderr. Stdout is clean JSON; stderr (if any) goes to the terminal.
   struct PkgData {
     std::string importPath;
     std::string modPath;
@@ -109,8 +109,9 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
     bool isStdlib = false;
     bool isMainModule = false;
     bool hasModule = false;
-    std::string replacePath;    // Module.Replace.Path (empty if not replaced)
-    std::string replaceVersion; // Module.Replace.Version (empty if not replaced)
+    std::string replacePath; // Module.Replace.Path (empty if not replaced)
+    std::string
+        replaceVersion; // Module.Replace.Version (empty if not replaced)
     std::vector<std::string> imports;
     bool isCgo = false;
     std::vector<std::string> cgoPkgConfig;
@@ -266,22 +267,19 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
     if (!p.cgoPkgConfig.empty()) {
       auto list = state.buildList(p.cgoPkgConfig.size());
       for (size_t i = 0; i < p.cgoPkgConfig.size(); ++i)
-        (list[i] = state.allocValue())
-            ->mkString(p.cgoPkgConfig[i], state.mem);
+        (list[i] = state.allocValue())->mkString(p.cgoPkgConfig[i], state.mem);
       pkgAttrs.alloc("cgoPkgConfig").mkList(list);
     }
     if (!p.cgoCflags.empty()) {
       auto list = state.buildList(p.cgoCflags.size());
       for (size_t i = 0; i < p.cgoCflags.size(); ++i)
-        (list[i] = state.allocValue())
-            ->mkString(p.cgoCflags[i], state.mem);
+        (list[i] = state.allocValue())->mkString(p.cgoCflags[i], state.mem);
       pkgAttrs.alloc("cgoCflags").mkList(list);
     }
     if (!p.cgoLdflags.empty()) {
       auto list = state.buildList(p.cgoLdflags.size());
       for (size_t i = 0; i < p.cgoLdflags.size(); ++i)
-        (list[i] = state.allocValue())
-            ->mkString(p.cgoLdflags[i], state.mem);
+        (list[i] = state.allocValue())->mkString(p.cgoLdflags[i], state.mem);
       pkgAttrs.alloc("cgoLdflags").mkList(list);
     }
 

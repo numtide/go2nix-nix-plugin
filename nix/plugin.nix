@@ -6,7 +6,6 @@
   cmake,
   boost,
   nlohmann_json,
-  tomlplusplus,
 }:
 
 stdenv.mkDerivation {
@@ -25,7 +24,6 @@ stdenv.mkDerivation {
     nixComponents.nix-util
     boost
     nlohmann_json
-    tomlplusplus
   ];
 
   meta = {

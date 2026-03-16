@@ -2,11 +2,16 @@
   goLock, # path to go2nix lockfile (TOML, [mod] only)
 }:
 let
-  inherit (builtins) readFile mapAttrs;
+  inherit (builtins)
+    readFile
+    fromTOML
+    mapAttrs
+    match
+    elemAt
+    ;
 
-  resolved = builtins.resolveGoModules {
-    lock = readFile goLock;
-  };
+  lockfile = fromTOML (readFile goLock);
+  modTable = lockfile.mod or { };
 
   # Module proxy URL escaping: uppercase letters become !lowercase
   # See https://pkg.go.dev/golang.org/x/mod/module#EscapePath
@@ -70,6 +75,24 @@ let
         "!z"
       ]
       path;
+
+  # Parse "path@version" = "hash" into structured module data
+  parseModEntry =
+    modKey: hash:
+    let
+      parsed = match "(.+)@(.+)" modKey;
+      path = elemAt parsed 0;
+      version = elemAt parsed 1;
+    in
+    {
+      inherit hash path version;
+      fetchPath = path;
+      dirSuffix = "${escapeModulePath path}@${version}";
+    };
+
+  resolved = {
+    modules = mapAttrs parseModEntry modTable;
+  };
 
   # Apply module replacements from resolveGoPackages to resolved modules.
   # replacements: { "path@version" = { path, version }; }

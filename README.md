@@ -1,6 +1,6 @@
 # go2nix-nix-plugin
 
-A Nix plugin that provides builtins for resolving Go module dependencies at evaluation time. It consumes [go2nix](https://github.com/numtide/go2nix) v2 lockfiles and can discover Go package graphs by running `go list`.
+A Nix plugin that discovers Go package dependency graphs at evaluation time by running `go list`. Used together with [go2nix](https://github.com/numtide/go2nix) v2 lockfiles to enable per-package DAG builds without storing the package graph in the lockfile.
 
 ## Building
 
@@ -17,37 +17,6 @@ nix build .#eval-test
 ```
 
 ## Builtins
-
-### `builtins.resolveGoModules`
-
-Parses a go2nix lockfile (TOML `[mod]` table) and returns structured module metadata.
-
-**Input:**
-
-```nix
-builtins.resolveGoModules {
-  lock = builtins.readFile ./go2nix.toml;
-}
-```
-
-**Output:**
-
-```nix
-{
-  modules = {
-    "golang.org/x/net@v0.25.0" = {
-      hash = "sha256-abc123...";
-      path = "golang.org/x/net";
-      version = "v0.25.0";
-      fetchPath = "golang.org/x/net";          # defaults to path
-      dirSuffix = "golang.org/x/net@v0.25.0";  # escaped for GOMODCACHE layout
-    };
-    # ...
-  };
-}
-```
-
-`fetchPath` and `dirSuffix` default to the module's own path. Use `applyReplacements` from the Nix library to override them with replacement info from `resolveGoPackages`.
 
 ### `builtins.resolveGoPackages`
 
@@ -156,7 +125,6 @@ nix fmt
 ```
 cpp/             C++ plugin source
   helpers.h/cc     Shared utilities (escape_mod_path, sanitize_name, ...)
-  resolve_go_modules.cc   builtins.resolveGoModules implementation
   resolve_go_packages.cc  builtins.resolveGoPackages implementation
   CMakeLists.txt   Build configuration
 lib/             Nix library wrapper (default.nix)
@@ -172,5 +140,4 @@ flake.nix        Flake definition
 ### Dependencies
 
 - [Nix](https://nixos.org/) >= 2.33 (nix-expr, nix-util)
-- [nlohmann_json](https://github.com/nlohmann/json) — JSON parsing and serialization
-- [toml++](https://github.com/marzer/tomlplusplus) — TOML parsing for lockfiles
+- [nlohmann_json](https://github.com/nlohmann/json) — JSON parsing for `go list` output

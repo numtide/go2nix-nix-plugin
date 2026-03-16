@@ -15,6 +15,5 @@ pkgs.mkShell {
     nixComponents.nix-util
     pkgs.boost
     pkgs.nlohmann_json
-    pkgs.tomlplusplus
   ];
 }
