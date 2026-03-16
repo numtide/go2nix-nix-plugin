@@ -4,7 +4,7 @@ A Nix plugin that provides builtins for resolving Go module dependencies at eval
 
 ## Building
 
-Requires Nix with flakes enabled. The plugin targets `x86_64-linux` (Nix plugins are `.so` shared libraries).
+Requires Nix with flakes enabled. The plugin builds a `.so` shared library.
 
 ```sh
 nix build .#go2nix-nix-plugin
@@ -65,6 +65,7 @@ builtins.resolveGoPackages {
   moduleDir = ".";
   goos = "linux";
   goarch = "amd64";
+  goProxy = "https://proxy.golang.org,direct"; # default: "off"
 }
 ```
 
@@ -93,7 +94,7 @@ builtins.resolveGoPackages {
 }
 ```
 
-Requires the host's `GOMODCACHE` to be populated (`go mod download`).
+By default `goProxy` is `"off"`, which requires the host's `GOMODCACHE` to be populated (e.g. via `go mod download`). Set `goProxy` to a proxy URL to allow downloading modules at eval time.
 
 ## Lockfile format
 
@@ -114,7 +115,6 @@ Keys are `path@version`, values are SRI hashes. Replace directives and the packa
 ```nix
 let
   goNixPlugin = import ./lib {
-    inherit pkgs;
     goLock = ./go2nix.toml;
   };
 
@@ -144,14 +144,28 @@ Enter the dev shell:
 nix develop
 ```
 
+Format the codebase:
+
+```sh
+nix fmt
+```
+
 ### Project structure
 
 ```
-cpp/           C++ plugin source (plugin.cc, CMakeLists.txt)
-lib/           Nix library wrapper (default.nix)
-nix/           Plugin derivation (plugin.nix)
-tests/         Eval tests and fixtures
-flake.nix      Flake definition
+cpp/             C++ plugin source
+  helpers.h/cc     Shared utilities (escape_mod_path, sanitize_name, ...)
+  resolve_go_modules.cc   builtins.resolveGoModules implementation
+  resolve_go_packages.cc  builtins.resolveGoPackages implementation
+  CMakeLists.txt   Build configuration
+lib/             Nix library wrapper (default.nix)
+nix/             Plugin derivation (plugin.nix)
+packages/        Blueprint package definitions
+tests/           Eval tests and fixtures
+devshell.nix     Development shell (loaded by blueprint)
+formatter.nix    Treefmt configuration (loaded by blueprint)
+flake.nix        Flake definition
+.envrc           direnv integration
 ```
 
 ### Dependencies

@@ -42,7 +42,6 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
   goArgs.push_back("list");
   goArgs.push_back("-json");
   goArgs.push_back("-deps");
-  goArgs.push_back("-compiled");
 
   if (!tags.empty()) {
     std::string tagStr;
