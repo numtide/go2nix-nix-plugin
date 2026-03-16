@@ -24,6 +24,8 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
   auto goos = getOptionalStringAttr(state, *args[0], pos, "goos", "");
   auto goarch = getOptionalStringAttr(state, *args[0], pos, "goarch", "");
   auto goProxy = getOptionalStringAttr(state, *args[0], pos, "goProxy", "off");
+  auto cgoEnabled =
+      getOptionalStringAttr(state, *args[0], pos, "cgoEnabled", "");
 
   // 2. Realise context — ensures the Go toolchain store path exists
   try {
@@ -71,6 +73,8 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
     env["GOOS"] = goos;
   if (!goarch.empty())
     env["GOARCH"] = goarch;
+  if (!cgoEnabled.empty())
+    env["CGO_ENABLED"] = cgoEnabled;
 
   // 6. Run go list
   RunOptions opts;
@@ -242,6 +246,7 @@ static RegisterPrimOp rp2({
       - `goarch` (optional): Target GOARCH for cross-compilation (default: host arch)
       - `goProxy` (optional): GOPROXY value (default: "off", set to
         "https://proxy.golang.org,direct" to allow downloads)
+      - `cgoEnabled` (optional): CGO_ENABLED value ("0" or "1", default: Go's default)
 
       Returns an attrset with:
       - `packages`: attrset keyed by import path, each with:

@@ -66,6 +66,7 @@ builtins.resolveGoPackages {
   goos = "linux";
   goarch = "amd64";
   goProxy = "https://proxy.golang.org,direct"; # default: "off"
+  cgoEnabled = "0"; # default: Go's default
 }
 ```
 

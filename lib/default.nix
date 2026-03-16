@@ -97,6 +97,7 @@ let
       goos ? null,
       goarch ? null,
       goProxy ? null,
+      cgoEnabled ? null,
     }:
     builtins.resolveGoPackages (
       {
@@ -111,6 +112,7 @@ let
       // (if goos != null then { inherit goos; } else { })
       // (if goarch != null then { inherit goarch; } else { })
       // (if goProxy != null then { inherit goProxy; } else { })
+      // (if cgoEnabled != null then { inherit cgoEnabled; } else { })
     );
 
 in
