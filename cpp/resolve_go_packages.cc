@@ -106,7 +106,8 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
     bool isStdlib = false;
     bool isMainModule = false;
     bool hasModule = false;
-    std::string replacePath; // Module.Replace.Path (empty if not replaced)
+    std::string replacePath;    // Module.Replace.Path (empty if not replaced)
+    std::string replaceVersion; // Module.Replace.Version (empty if not replaced)
     std::vector<std::string> imports;
     bool isCgo = false;
     std::vector<std::string> cgoPkgConfig;
@@ -134,6 +135,7 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
       if (mod.contains("Replace") && mod["Replace"].is_object()) {
         auto &repl = mod["Replace"];
         p.replacePath = repl.value("Path", "");
+        p.replaceVersion = repl.value("Version", "");
       }
     }
 
@@ -168,14 +170,17 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
       thirdPartyPaths.insert(p.importPath);
   }
 
-  // Collect module replacements: modKey -> replacePath
+  // Collect module replacements: modKey -> { path, version }
   // (deduplicated since many packages share the same module)
   nlohmann::json replacements = nlohmann::json::object();
   for (auto &p : allPkgs) {
     if (!p.hasModule || p.isMainModule || p.replacePath.empty())
       continue;
     std::string modKey = p.modPath + "@" + p.modVersion;
-    replacements[modKey] = p.replacePath;
+    replacements[modKey] = {
+        {"path", p.replacePath},
+        {"version", p.replaceVersion},
+    };
   }
 
   // Build packages
@@ -258,7 +263,7 @@ static RegisterPrimOp rp2({
         - `cgoPkgConfig` (optional): list of pkg-config packages
         - `cgoCflags` (optional): list of CGO CFLAGS
         - `cgoLdflags` (optional): list of CGO LDFLAGS
-      - `replacements`: attrset mapping "module@version" to replacement path
+      - `replacements`: attrset mapping "module@version" to { path, version }
         (from go.mod replace directives, extracted via Module.Replace in go list)
 
       Requires the host's GOMODCACHE to be populated (run `go mod download` first),

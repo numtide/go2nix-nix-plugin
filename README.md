@@ -90,7 +90,7 @@ builtins.resolveGoPackages {
   };
   replacements = {
     # from go.mod replace directives (extracted via Module.Replace in go list)
-    "golang.org/x/net@v0.25.0" = "golang.org/x/net-fork";
+    "golang.org/x/net@v0.25.0" = { path = "golang.org/x/net-fork"; version = "v0.26.0"; };
   };
 }
 ```

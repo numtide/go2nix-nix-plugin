@@ -72,18 +72,20 @@ let
       path;
 
   # Apply module replacements from resolveGoPackages to resolved modules.
-  # replacements: { "path@version" = "replacement-path"; }
+  # replacements: { "path@version" = { path, version }; }
   applyReplacements =
     replacements:
     mapAttrs (
       modKey: mod:
       let
-        fetchPath = replacements.${modKey} or mod.path;
+        repl = replacements.${modKey} or null;
+        fetchPath = if repl != null then repl.path else mod.path;
+        version = if repl != null && repl.version != "" then repl.version else mod.version;
       in
       mod
       // {
-        inherit fetchPath;
-        dirSuffix = "${escapeModulePath fetchPath}@${mod.version}";
+        inherit fetchPath version;
+        dirSuffix = "${escapeModulePath fetchPath}@${version}";
       }
     ) resolved.modules;
 
