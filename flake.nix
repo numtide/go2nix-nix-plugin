@@ -28,6 +28,6 @@
     in
     blueprintOutputs
     // {
-      lib = import ./lib { };
+      lib = import ./lib;
     };
 }
