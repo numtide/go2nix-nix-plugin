@@ -1,7 +1,6 @@
 #pragma once
 
 #include <nix/expr/eval.hh>
-#include <nlohmann/json.hpp>
 #include <string>
 
 using namespace nix;

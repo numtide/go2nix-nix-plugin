@@ -3,6 +3,7 @@
 #include <map>
 #include <nix/expr/primops.hh>
 #include <nix/util/processes.hh>
+#include <nlohmann/json.hpp>
 #include <sstream>
 
 static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
@@ -124,7 +125,20 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
   std::istringstream stream(output);
   nlohmann::json jpkg;
 
-  while (stream >> jpkg) {
+  // nlohmann's operator>> throws parse_error on trailing whitespace + EOF
+  // instead of returning a failed stream, so skip whitespace and check for
+  // EOF before each parse attempt.
+  while (stream >> std::ws && stream.peek() != EOF) {
+    try {
+      stream >> jpkg;
+    } catch (const nlohmann::json::parse_error &e) {
+      state
+          .error<EvalError>(
+              "resolveGoPackages: failed to parse go list JSON: %s", e.what())
+          .atPos(pos)
+          .debugThrow();
+    }
+
     // Check for per-package errors (reported via -e flag)
     if (jpkg.contains("Error") && jpkg["Error"].is_object()) {
       auto importPath = jpkg.value("ImportPath", "<unknown>");
