@@ -1,6 +1,7 @@
 #include "helpers.h"
 
-extern char **environ;
+#include <cstdlib>
+#include <vector>
 
 std::string escape_mod_path(const std::string &path) {
   std::string result;
@@ -27,13 +28,12 @@ std::string sanitize_name(const std::string &s) {
   return result;
 }
 
-StringMap copyCurrentEnviron() {
+StringMap inheritEnv(const std::vector<std::string> &keys) {
   StringMap env;
-  for (char **e = environ; *e; e++) {
-    std::string entry(*e);
-    auto eq = entry.find('=');
-    if (eq != std::string::npos)
-      env[entry.substr(0, eq)] = entry.substr(eq + 1);
+  for (auto &key : keys) {
+    const char *val = std::getenv(key.c_str());
+    if (val)
+      env[key] = val;
   }
   return env;
 }

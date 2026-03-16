@@ -13,8 +13,9 @@ std::string escape_mod_path(const std::string &path);
 /// '/' -> '-', '+' -> '_'  (matches helpers.nix)
 std::string sanitize_name(const std::string &s);
 
-/// Copy the current process environment into a StringMap.
-StringMap copyCurrentEnviron();
+/// Inherit specific environment variables from the current process.
+/// Only copies vars named in `keys` that are actually set.
+StringMap inheritEnv(const std::vector<std::string> &keys);
 
 /// Get a required string attribute from an attrset.
 std::string getRequiredStringAttr(EvalState &state, Value &attrs,

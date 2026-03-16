@@ -46,6 +46,7 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
   goArgs.push_back("-json");
   goArgs.push_back("-deps");
   goArgs.push_back("-e");
+  goArgs.push_back("-buildvcs=false");
 
   if (!tags.empty()) {
     std::string tagStr;
@@ -66,11 +67,34 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
   if (moduleDir != ".")
     workDir = srcDir + "/" + moduleDir;
 
-  // 5. Set up environment: inherit parent env + overrides
-  auto env = copyCurrentEnviron();
+  // 5. Set up environment: only what go list actually needs.
+  //    Nix's runProgram replaces the entire child env when opts.environment
+  //    is set. GOROOT is self-detected from the binary location. GOCACHE and
+  //    TMPDIR are unused by go list. -buildvcs=false avoids VCS tool lookups.
+  auto env = inheritEnv({
+      "GOMODCACHE", // module cache — the critical one
+      "GOPATH",     // fallback: GOMODCACHE defaults to $GOPATH/pkg/mod
+      "HOME",       // fallback: GOPATH defaults to $HOME/go
+  });
   env["GOPROXY"] = goProxy;
   env["GONOSUMCHECK"] = "*";
   env["GOFLAGS"] = "-mod=mod";
+  env["GOENV"] = "off";  // ignore user's ~/.config/go/env
+  env["GOWORK"] = "off"; // ignore go.work files
+
+  // When goProxy allows network access, inherit vars needed for downloads
+  if (goProxy != "off") {
+    auto netEnv = inheritEnv({
+        "PATH",              // git/hg for GOPROXY=direct
+        "TMPDIR",            // temp files for downloads
+        "SSL_CERT_FILE",     // TLS certs for HTTPS proxy
+        "SSL_CERT_DIR",      // TLS cert directory
+        "NIX_SSL_CERT_FILE", // Nix-specific TLS cert override
+    });
+    env.insert(netEnv.begin(), netEnv.end());
+    env["GIT_TERMINAL_PROMPT"] = "0"; // prevent git credential prompts
+  }
+
   if (!goos.empty())
     env["GOOS"] = goos;
   if (!goarch.empty())
