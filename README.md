@@ -20,7 +20,7 @@ nix build .#eval-test
 
 ### `builtins.resolveGoPackages`
 
-Runs `go list -json -deps` against a Go source tree and returns the third-party package graph and module replacements.
+Runs `go list -json -deps -e` against a Go source tree and returns the third-party package graph and module replacements.
 
 **Input:**
 

@@ -297,13 +297,13 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
       pkgAttrs.alloc("cgoLdflags").mkList(list);
     }
 
-    packages.alloc(p.importPath).mkAttrs(pkgAttrs);
+    packages.alloc(p.importPath).mkAttrs(pkgAttrs.finish());
   }
 
   // Build result: { packages = { ... }; replacements = { ... }; }
   auto result = state.buildBindings(2);
-  result.alloc("packages").mkAttrs(packages);
-  result.alloc("replacements").mkAttrs(replacements);
+  result.alloc("packages").mkAttrs(packages.finish());
+  result.alloc("replacements").mkAttrs(replacements.finish());
   v.mkAttrs(result.finish());
 }
 
