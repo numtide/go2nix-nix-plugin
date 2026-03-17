@@ -46,7 +46,7 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
   //    need, reducing output size and serialization time significantly.
   Strings goArgs;
   goArgs.push_back("list");
-  goArgs.push_back("-json=ImportPath,Standard,Module,Imports,"
+  goArgs.push_back("-json=ImportPath,Module,Imports,"
                     "CgoFiles,CgoPkgConfig,CgoCFLAGS,CgoLDFLAGS,Error");
   goArgs.push_back("-deps");
   goArgs.push_back("-e");
@@ -150,6 +150,8 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
   std::vector<std::string> pkgErrors;
   std::set<std::string> thirdPartyPaths;
   std::map<std::string, std::pair<std::string, std::string>> replMap;
+  // Local replace directives: module path -> relative filesystem path.
+  std::map<std::string, std::string> localReplMap;
 
   std::istringstream stream(output);
   nlohmann::json jpkg;
@@ -176,11 +178,8 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
       continue;
     }
 
-    // Skip stdlib packages early — they make up the bulk of go list output.
-    if (jpkg.value("Standard", false))
-      continue;
-
-    // Skip packages without a module (shouldn't happen for non-stdlib).
+    // Skip packages without a module (stdlib + non-module packages).
+    // Go guarantees Standard implies Module == nil (see modload/build.go).
     if (!jpkg.contains("Module") || !jpkg["Module"].is_object())
       continue;
 
@@ -200,9 +199,14 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
     bool isLocal =
         isMainModule || (!replacePath.empty() && replaceVersion.empty());
 
-    // Skip local packages (main module + local replaces).
-    if (isLocal)
+    // Collect local replace paths (not main module) before skipping.
+    if (isLocal) {
+      if (!isMainModule && !replacePath.empty()) {
+        auto modPath = mod.value("Path", "");
+        localReplMap.try_emplace(modPath, replacePath);
+      }
       continue;
+    }
 
     auto importPath = jpkg.value("ImportPath", "");
     auto modPath = mod.value("Path", "");
@@ -333,8 +337,15 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
     packages.alloc(p.importPath).mkAttrs(pkgAttrs.finish());
   }
 
-  // Build result: { packages = { ... }; replacements = { ... }; }
-  auto result = state.buildBindings(2);
+  // 10. Build localReplaces attrset: module path -> relative filesystem path.
+  auto localReplaces = state.buildBindings(localReplMap.size());
+  for (auto &[modPath, relPath] : localReplMap) {
+    localReplaces.alloc(modPath).mkString(relPath, state.mem);
+  }
+
+  // Build result.
+  auto result = state.buildBindings(3);
+  result.alloc("localReplaces").mkAttrs(localReplaces.finish());
   result.alloc("packages").mkAttrs(packages.finish());
   result.alloc("replacements").mkAttrs(replacements.finish());
   v.mkAttrs(result.finish());
@@ -372,6 +383,9 @@ static RegisterPrimOp rp({
         - `cgoLdflags` (optional): list of CGO LDFLAGS
       - `replacements`: attrset mapping "module@version" to { path, version }
         (from go.mod replace directives, extracted via Module.Replace in go list)
+      - `localReplaces`: attrset mapping module path to relative filesystem path
+        for local replace directives (e.g. `replace mod => ../path` in go.mod).
+        Only includes filesystem replaces, not versioned module replaces.
 
       Requires the host's GOMODCACHE to be populated (run `go mod download` first),
       unless `goProxy` is set to allow downloads.
