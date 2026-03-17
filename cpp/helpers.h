@@ -5,10 +5,6 @@
 
 using namespace nix;
 
-/// Escape a Go module path: uppercase letters become '!' + lowercase.
-/// See https://pkg.go.dev/golang.org/x/mod/module#EscapePath
-std::string escape_mod_path(const std::string &path);
-
 /// Sanitize an import path for use as a Nix derivation name.
 /// '/' -> '-', '+' -> '_'  (matches helpers.nix)
 std::string sanitize_name(const std::string &s);

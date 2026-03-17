@@ -3,20 +3,6 @@
 #include <cstdlib>
 #include <vector>
 
-std::string escape_mod_path(const std::string &path) {
-  std::string result;
-  result.reserve(path.size());
-  for (char c : path) {
-    if (c >= 'A' && c <= 'Z') {
-      result += '!';
-      result += static_cast<char>(c + 32);
-    } else {
-      result += c;
-    }
-  }
-  return result;
-}
-
 std::string sanitize_name(const std::string &s) {
   std::string result = s;
   for (auto &c : result) {
