@@ -78,34 +78,6 @@ The lockfile only needs a `[mod]` table — module hashes:
 
 Keys are `path@version`, values are SRI hashes. Replace directives and the package graph are discovered at eval time via `resolveGoPackages` (which runs `go list`).
 
-## Nix library
-
-`lib/default.nix` provides a higher-level interface:
-
-```nix
-let
-  goNixPlugin = import ./lib {
-    goLock = ./go2nix.toml;
-  };
-
-  # Discover package graph + replacements from source (runs go list at eval time)
-  graph = goNixPlugin.resolveGoPackages {
-    src = ./.;
-    go = pkgs.go;
-  };
-
-  # Apply replacements to get correct fetchPath/dirSuffix for replaced modules
-  modules = goNixPlugin.applyReplacements graph.replacements;
-in
-{
-  # modules: { "path@version" = { hash, path, version, fetchPath, dirSuffix }; }
-  inherit modules;
-
-  # graph.packages: { "import/path" = { modKey, subdir, imports, drvName, ... }; }
-  inherit (graph) packages;
-}
-```
-
 ## Development
 
 Enter the dev shell:
@@ -124,10 +96,9 @@ nix fmt
 
 ```
 cpp/             C++ plugin source
-  helpers.h/cc     Shared utilities (escape_mod_path, sanitize_name, ...)
+  helpers.h/cc     Shared utilities (sanitize_name, inheritEnv, ...)
   resolve_go_packages.cc  builtins.resolveGoPackages implementation
   CMakeLists.txt   Build configuration
-lib/             Nix library wrapper (default.nix)
 nix/             Plugin derivation (plugin.nix)
 packages/        Blueprint package definitions
 tests/           Eval tests and fixtures
