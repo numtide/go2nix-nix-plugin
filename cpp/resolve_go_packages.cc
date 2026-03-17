@@ -4,6 +4,7 @@
 #include <nix/expr/primops.hh>
 #include <nix/util/processes.hh>
 #include <nlohmann/json.hpp>
+#include <set>
 #include <sstream>
 
 static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
@@ -41,9 +42,12 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
   }
 
   // 3. Build go list command args
+  //    -json=<fields> (Go 1.24+) tells go list to only emit the fields we
+  //    need, reducing output size and serialization time significantly.
   Strings goArgs;
   goArgs.push_back("list");
-  goArgs.push_back("-json");
+  goArgs.push_back("-json=ImportPath,Standard,Module,Imports,"
+                    "CgoFiles,CgoPkgConfig,CgoCFLAGS,CgoLDFLAGS,Error");
   goArgs.push_back("-deps");
   goArgs.push_back("-e");
   goArgs.push_back("-buildvcs=false");
@@ -131,22 +135,22 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
     std::string importPath;
     std::string modPath;
     std::string modVersion;
-    bool isStdlib = false;
-    bool isMainModule = false;
-    bool hasModule = false;
-    bool isLocal = false; // main module or local replace (Replace.Version=="")
-    std::string replacePath; // Module.Replace.Path (empty if not replaced)
-    std::string
-        replaceVersion; // Module.Replace.Version (empty if not replaced)
+    std::string replacePath;
+    std::string replaceVersion;
     std::vector<std::string> imports;
-    bool isCgo = false;
     std::vector<std::string> cgoPkgConfig;
     std::vector<std::string> cgoCflags;
     std::vector<std::string> cgoLdflags;
+    bool isLocal = false;
+    bool isCgo = false;
   };
 
-  std::vector<PkgData> allPkgs;
+  // First pass: parse JSON, collect third-party packages and replacements.
+  std::vector<PkgData> thirdPartyPkgs;
   std::vector<std::string> pkgErrors;
+  std::set<std::string> thirdPartyPaths;
+  std::map<std::string, std::pair<std::string, std::string>> replMap;
+
   std::istringstream stream(output);
   nlohmann::json jpkg;
 
@@ -172,29 +176,52 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
       continue;
     }
 
-    PkgData p;
-    p.importPath = jpkg.value("ImportPath", "");
-    p.isStdlib = jpkg.value("Standard", false);
+    // Skip stdlib packages early — they make up the bulk of go list output.
+    if (jpkg.value("Standard", false))
+      continue;
 
-    if (jpkg.contains("Module") && jpkg["Module"].is_object()) {
-      auto &mod = jpkg["Module"];
-      p.hasModule = true;
-      p.modPath = mod.value("Path", "");
-      p.modVersion = mod.value("Version", "");
-      p.isMainModule = mod.value("Main", false);
+    // Skip packages without a module (shouldn't happen for non-stdlib).
+    if (!jpkg.contains("Module") || !jpkg["Module"].is_object())
+      continue;
 
-      // Extract replacement info
-      if (mod.contains("Replace") && mod["Replace"].is_object()) {
-        auto &repl = mod["Replace"];
-        p.replacePath = repl.value("Path", "");
-        p.replaceVersion = repl.value("Version", "");
-      }
+    auto &mod = jpkg["Module"];
+    bool isMainModule = mod.value("Main", false);
 
-      // A module is local if it's the main module or a local replace
-      // (Replace exists with empty version). Matches go2nix's IsLocal().
-      p.isLocal = p.isMainModule ||
-                  (!p.replacePath.empty() && p.replaceVersion.empty());
+    std::string replacePath;
+    std::string replaceVersion;
+    if (mod.contains("Replace") && mod["Replace"].is_object()) {
+      auto &repl = mod["Replace"];
+      replacePath = repl.value("Path", "");
+      replaceVersion = repl.value("Version", "");
     }
+
+    // A module is local if it's the main module or a local replace
+    // (Replace exists with empty version). Matches go2nix's IsLocal().
+    bool isLocal =
+        isMainModule || (!replacePath.empty() && replaceVersion.empty());
+
+    // Skip local packages (main module + local replaces).
+    if (isLocal)
+      continue;
+
+    auto importPath = jpkg.value("ImportPath", "");
+    auto modPath = mod.value("Path", "");
+    auto modVersion = mod.value("Version", "");
+
+    // Collect remote replacements (deduplicated by modKey).
+    if (!replacePath.empty()) {
+      std::string modKey = modPath + "@" + modVersion;
+      replMap.try_emplace(modKey, replacePath, replaceVersion);
+    }
+
+    thirdPartyPaths.insert(importPath);
+
+    PkgData p;
+    p.importPath = std::move(importPath);
+    p.modPath = std::move(modPath);
+    p.modVersion = std::move(modVersion);
+    p.replacePath = std::move(replacePath);
+    p.replaceVersion = std::move(replaceVersion);
 
     if (jpkg.contains("Imports") && jpkg["Imports"].is_array()) {
       for (auto &imp : jpkg["Imports"])
@@ -216,7 +243,7 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
       for (auto &x : jpkg["CgoLDFLAGS"])
         p.cgoLdflags.push_back(x.get<std::string>());
 
-    allPkgs.push_back(std::move(p));
+    thirdPartyPkgs.push_back(std::move(p));
   }
 
   if (!pkgErrors.empty()) {
@@ -228,23 +255,7 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
     state.error<EvalError>("%s", errMsg).atPos(pos).debugThrow();
   }
 
-  // Build set of third-party import paths (not stdlib, not local, has module)
-  std::set<std::string> thirdPartyPaths;
-  for (auto &p : allPkgs) {
-    if (!p.isStdlib && p.hasModule && !p.isLocal)
-      thirdPartyPaths.insert(p.importPath);
-  }
-
-  // Collect module replacements: modKey -> { path, version }
-  // Only remote replacements (version != ""); local replaces are filtered out.
-  std::map<std::string, std::pair<std::string, std::string>> replMap;
-  for (auto &p : allPkgs) {
-    if (!p.hasModule || p.isLocal || p.replacePath.empty())
-      continue;
-    std::string modKey = p.modPath + "@" + p.modVersion;
-    replMap[modKey] = {p.replacePath, p.replaceVersion};
-  }
-
+  // 8. Build replacements attrset.
   auto replacements = state.buildBindings(replMap.size());
   for (auto &[modKey, repl] : replMap) {
     auto replAttrs = state.buildBindings(2);
@@ -253,19 +264,10 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
     replacements.alloc(modKey).mkAttrs(replAttrs.finish());
   }
 
-  // Count third-party packages for attrset capacity
-  size_t pkgCount = 0;
-  for (auto &p : allPkgs)
-    if (thirdPartyPaths.count(p.importPath))
-      ++pkgCount;
+  // 9. Build packages attrset (second pass: only over third-party packages).
+  auto packages = state.buildBindings(thirdPartyPkgs.size());
 
-  // Build packages attrset
-  auto packages = state.buildBindings(pkgCount);
-
-  for (auto &p : allPkgs) {
-    if (!thirdPartyPaths.count(p.importPath))
-      continue;
-
+  for (auto &p : thirdPartyPkgs) {
     std::string modKey = p.modPath + "@" + p.modVersion;
 
     std::string subdir;
@@ -338,7 +340,7 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
   v.mkAttrs(result.finish());
 }
 
-static RegisterPrimOp rp2({
+static RegisterPrimOp rp({
     .name = "resolveGoPackages",
     .args = {"attrs"},
     .arity = 1,
