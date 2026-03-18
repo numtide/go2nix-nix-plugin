@@ -287,7 +287,7 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
         filteredImports.push_back(imp);
     }
 
-    std::string drvName = "gopkg-" + sanitize_name(p.importPath);
+    std::string drvName = "gopkg-" + sanitize_name(p.importPath) + "-" + p.modVersion;
 
     // Count optional fields
     size_t attrCount = 4; // modKey, subdir, imports, drvName
