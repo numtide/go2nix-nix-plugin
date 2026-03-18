@@ -34,7 +34,7 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
   } catch (InvalidPathError &e) {
     state
         .error<EvalError>(
-            "resolveGoPackages: cannot realise context for '%s': %s", e.path,
+            "resolveGoPackages: cannot realise context for '%s': %s", e.path.to_string(),
             e.what())
         .atPos(pos)
         .debugThrow();
@@ -398,5 +398,5 @@ static RegisterPrimOp rp({
       Requires the host's GOMODCACHE to be populated (run `go mod download` first),
       unless `goProxy` is set to allow downloads.
     )",
-    .fun = prim_resolveGoPackages,
+    .impl = prim_resolveGoPackages,
 });

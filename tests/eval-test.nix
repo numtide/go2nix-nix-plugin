@@ -6,7 +6,7 @@
 
 pkgs.runCommand "go2nix-nix-plugin-eval-test"
   {
-    nativeBuildInputs = [ pkgs.nixVersions.nix_2_33 ];
+    nativeBuildInputs = [ pkgs.nixVersions.latest ];
   }
   ''
     # Use a local temp store to avoid permission issues in the sandbox

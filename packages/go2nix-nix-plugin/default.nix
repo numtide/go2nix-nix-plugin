@@ -1,6 +1,6 @@
 { pkgs, ... }:
 let
-  nixComponents = pkgs.nixVersions.nixComponents_2_33;
+  nixComponents = pkgs.nixVersions.latest.libs;
 in
 pkgs.callPackage ../../nix/plugin.nix {
   inherit nixComponents;
