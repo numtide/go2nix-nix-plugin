@@ -212,8 +212,13 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
     auto modVersion = mod.value("Version", "");
 
     // Collect remote replacements (deduplicated by modKey).
+    // Use the replacement version in the key to match go2nix's lockfile
+    // convention: the key reflects the effective (fetched) version, while
+    // the [replace] section records the fetch path.
     if (!replacePath.empty()) {
-      std::string modKey = modPath + "@" + modVersion;
+      std::string effectiveVersion =
+          replaceVersion.empty() ? modVersion : replaceVersion;
+      std::string modKey = modPath + "@" + effectiveVersion;
       replMap.try_emplace(modKey, replacePath, replaceVersion);
     }
 
@@ -271,7 +276,10 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
   auto packages = state.buildBindings(thirdPartyPkgs.size());
 
   for (auto &p : thirdPartyPkgs) {
-    std::string modKey = p.modPath + "@" + p.modVersion;
+    // Use replacement version when available to match lockfile keys.
+    std::string effectiveVersion =
+        p.replaceVersion.empty() ? p.modVersion : p.replaceVersion;
+    std::string modKey = p.modPath + "@" + effectiveVersion;
 
     std::string subdir;
     if (p.importPath != p.modPath) {
