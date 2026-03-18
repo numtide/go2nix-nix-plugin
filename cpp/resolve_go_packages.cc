@@ -21,8 +21,7 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
   auto tags = getOptionalStringListAttr(state, *args[0], pos, "tags", {});
   auto subPackages =
       getOptionalStringListAttr(state, *args[0], pos, "subPackages", {"./..."});
-  auto moduleDir =
-      getOptionalStringAttr(state, *args[0], pos, "moduleDir", ".");
+  auto modRoot = getOptionalStringAttr(state, *args[0], pos, "modRoot", ".");
   auto goos = getOptionalStringAttr(state, *args[0], pos, "goos", "");
   auto goarch = getOptionalStringAttr(state, *args[0], pos, "goarch", "");
   auto goProxy = getOptionalStringAttr(state, *args[0], pos, "goProxy", "off");
@@ -47,7 +46,7 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
   Strings goArgs;
   goArgs.push_back("list");
   goArgs.push_back("-json=ImportPath,Module,Imports,"
-                    "CgoFiles,CgoPkgConfig,CgoCFLAGS,CgoLDFLAGS,Error");
+                   "CgoFiles,CgoPkgConfig,CgoCFLAGS,CgoLDFLAGS,Error");
   goArgs.push_back("-deps");
   goArgs.push_back("-e");
   goArgs.push_back("-buildvcs=false");
@@ -68,8 +67,8 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
 
   // 4. Compute working directory
   std::string workDir = srcDir;
-  if (moduleDir != ".")
-    workDir = srcDir + "/" + moduleDir;
+  if (modRoot != ".")
+    workDir = srcDir + "/" + modRoot;
 
   // 5. Set up environment: only what go list actually needs.
   //    Nix's runProgram replaces the entire child env when opts.environment
@@ -287,7 +286,8 @@ static void prim_resolveGoPackages(EvalState &state, const PosIdx pos,
         filteredImports.push_back(imp);
     }
 
-    std::string drvName = "gopkg-" + sanitize_name(p.importPath) + "-" + p.modVersion;
+    std::string drvName =
+        "gopkg-" + sanitize_name(p.importPath) + "-" + p.modVersion;
 
     // Count optional fields
     size_t attrCount = 4; // modKey, subdir, imports, drvName
@@ -364,7 +364,7 @@ static RegisterPrimOp rp({
       - `src`: Path to the Go source directory
       - `tags` (optional): List of build tags (default: [])
       - `subPackages` (optional): List of package patterns (default: ["./..."])
-      - `moduleDir` (optional): Subdirectory containing go.mod (default: ".")
+      - `modRoot` (optional): Subdirectory containing go.mod (default: ".")
       - `goos` (optional): Target GOOS for cross-compilation (default: host OS)
       - `goarch` (optional): Target GOARCH for cross-compilation (default: host arch)
       - `goProxy` (optional): GOPROXY value (default: "off", set to
