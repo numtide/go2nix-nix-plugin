@@ -13,7 +13,7 @@ nix build .#go2nix-nix-plugin
 Run the eval test:
 
 ```sh
-nix build .#eval-test
+nix build .#checks.x86_64-linux.pkgs-eval-test
 ```
 
 ## Builtins
@@ -31,7 +31,7 @@ builtins.resolveGoPackages {
   # Optional:
   tags = [ "netgo" ];
   subPackages = [ "./cmd/..." ];
-  moduleDir = ".";
+  modRoot = ".";
   goos = "linux";
   goarch = "amd64";
   goProxy = "https://proxy.golang.org,direct"; # default: "off"
@@ -48,7 +48,7 @@ builtins.resolveGoPackages {
       modKey = "golang.org/x/net@v0.25.0";
       subdir = "http2";
       imports = [ "golang.org/x/text/encoding" ];
-      drvName = "gopkg-golang.org-x-net-http2";
+      drvName = "gopkg-golang-org-x-net-http2-v0.25.0";
       # CGO fields (only present when applicable):
       isCgo = true;
       cgoPkgConfig = [ "sqlite3" ];
@@ -60,6 +60,10 @@ builtins.resolveGoPackages {
   replacements = {
     # from go.mod replace directives (extracted via Module.Replace in go list)
     "golang.org/x/net@v0.25.0" = { path = "golang.org/x/net-fork"; version = "v0.26.0"; };
+  };
+  localReplaces = {
+    # local replace directives (e.g. replace mod => ../path in go.mod)
+    "example.com/mylib" = "../mylib";
   };
 }
 ```
