@@ -114,5 +114,5 @@ flake.nix        Flake definition
 
 ### Dependencies
 
-- [Nix](https://nixos.org/) >= 2.33 (nix-expr, nix-util)
+- [Nix](https://nixos.org/) >= 2.34 (nix-expr, nix-util)
 - [nlohmann_json](https://github.com/nlohmann/json) — JSON parsing for `go list` output
