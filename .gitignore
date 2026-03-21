@@ -1,20 +1,2 @@
-# Nix
 /result
-/result-*
-
-# CMake
-/build/
-
-# direnv
-.direnv/
-.envrc.local
-
-# Editor
-*.swp
-*.swo
-*~
-.vscode/
-.idea/
-
-# OS
-.DS_Store
+/rust/target/
