@@ -1,6 +1,7 @@
 {
   lib,
   stdenv,
+  rustPlatform,
   nixComponents,
   pkg-config,
   cmake,
@@ -8,11 +9,20 @@
   nlohmann_json,
 }:
 
+let
+  core = rustPlatform.buildRustPackage {
+    pname = "go2nix-nix-plugin-core";
+    version = "0.1.0";
+    src = ../rust;
+    cargoLock.lockFile = ../rust/Cargo.lock;
+    doCheck = false;
+  };
+in
 stdenv.mkDerivation {
   pname = "go2nix-nix-plugin";
   version = "0.1.0";
 
-  src = ../cpp;
+  src = ../plugin;
 
   nativeBuildInputs = [
     pkg-config
@@ -21,14 +31,18 @@ stdenv.mkDerivation {
 
   buildInputs = [
     nixComponents.nix-expr
-    nixComponents.nix-util
+    nixComponents.nix-store
     boost
     nlohmann_json
+  ];
+
+  cmakeFlags = [
+    "-DRUST_LIB_DIR=${core}/lib"
   ];
 
   meta = {
     description = "Nix plugin for resolving Go module dependencies";
     license = lib.licenses.mit;
-    platforms = lib.platforms.linux;
+    platforms = lib.platforms.linux ++ lib.platforms.darwin;
   };
 }

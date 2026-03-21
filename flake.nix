@@ -1,30 +1,71 @@
 {
-  nixConfig = {
-    extra-substituters = [ "https://nix-community.cachix.org" ];
-    extra-trusted-public-keys = [
-      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
-    ];
-  };
-
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/a07d4ce6bee67d7c838a8a5796e75dff9caa21ef";
-    blueprint = {
-      url = "github:numtide/blueprint";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-    treefmt-nix = {
-      url = "github:numtide/treefmt-nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
   };
 
   outputs =
-    inputs:
+    { nixpkgs, ... }:
     let
-      blueprintOutputs = inputs.blueprint {
-        inherit inputs;
-        nixpkgs.config.allowUnfree = true;
-      };
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "aarch64-darwin"
+      ];
+      forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in
-    blueprintOutputs;
+    {
+      packages = forAllSystems (pkgs:
+        let
+          plugin = pkgs.callPackage ./nix/plugin.nix {
+            nixComponents = pkgs.nixVersions.nix_2_34.libs;
+          };
+        in
+        {
+          default = plugin;
+          go2nix-nix-plugin = plugin;
+        }
+      );
+
+      checks = forAllSystems (pkgs:
+        let
+          plugin = pkgs.callPackage ./nix/plugin.nix {
+            nixComponents = pkgs.nixVersions.nix_2_34.libs;
+          };
+
+          core = pkgs.rustPlatform.buildRustPackage {
+            pname = "go2nix-nix-plugin-core";
+            version = "0.1.0";
+            src = ./rust;
+            cargoLock.lockFile = ./rust/Cargo.lock;
+            doCheck = false;
+          };
+        in
+        {
+          build = plugin;
+
+          clippy = core.overrideAttrs (old: {
+            pname = "go2nix-nix-plugin-clippy";
+            nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.clippy ];
+            buildPhase = ''
+              cargo clippy --all-targets -- -D warnings
+            '';
+            installPhase = ''
+              touch $out
+            '';
+          });
+
+          rustfmt = pkgs.runCommand "go2nix-nix-plugin-rustfmt" {
+            nativeBuildInputs = [ pkgs.rustfmt ];
+          } ''
+            find ${./rust/src} -name '*.rs' -exec ${pkgs.rustfmt}/bin/rustfmt --check {} +
+            touch $out
+          '';
+
+          eval-test = pkgs.callPackage ./tests/eval-test.nix {
+            inherit plugin;
+            testFixtures = ./tests/fixtures;
+          };
+        }
+      );
+    };
 }
